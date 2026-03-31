@@ -7,7 +7,7 @@ import '../../core/widgets/message_bubble.dart';
 import '../../core/widgets/message_input.dart';
 import '../services/chat_service.dart';
 
-class ChatScreen extends StatelessWidget {
+class ChatScreen extends StatefulWidget {
   final ChatRoom chatRoom;
   final UserModel currentUser;
 
@@ -16,6 +16,29 @@ class ChatScreen extends StatelessWidget {
     required this.chatRoom,
     required this.currentUser,
   });
+
+  @override
+  State<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends State<ChatScreen> {
+  final _scrollController = ScrollController();
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +51,7 @@ class ChatScreen extends StatelessWidget {
             CircleAvatar(
               backgroundColor: Colors.white24,
               child: Text(
-                chatRoom.avatarInitials(currentUser.uid),
+                widget.chatRoom.avatarInitials(widget.currentUser.uid),
                 style: const TextStyle(color: Colors.white),
               ),
             ),
@@ -37,12 +60,27 @@ class ChatScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  chatRoom.displayName(currentUser.uid),
+                  widget.chatRoom.displayName(widget.currentUser.uid),
                   style: const TextStyle(fontSize: 15),
                 ),
-                const Text('online',
-                    style:
-                        TextStyle(fontSize: 11, color: Colors.white70)),
+                // Real-time online status từ Firestore
+                StreamBuilder<bool>(
+                  stream: ChatService().watchUserOnline(
+                    widget.chatRoom.memberIds.firstWhere(
+                        (id) => id != widget.currentUser.uid,
+                        orElse: () => widget.currentUser.uid),
+                  ),
+                  builder: (_, snap) {
+                    final isOnline = snap.data ?? false;
+                    return Text(
+                      isOnline ? 'online' : 'offline',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isOnline ? Colors.greenAccent : Colors.white54,
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ],
@@ -50,7 +88,6 @@ class ChatScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
-            tooltip: 'Key concept',
             onPressed: () => _showConceptDialog(context),
           ),
         ],
@@ -58,36 +95,60 @@ class ChatScreen extends StatelessWidget {
       body: Column(
         children: [
           // Concept banner
-          _ConceptBanner(
-            text: 'StreamBuilder + .snapshots() → real-time, no polling',
-            color: AppTheme.level1Color,
+          Container(
+            width: double.infinity,
+            color: AppTheme.level1Color.withOpacity(0.1),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+            child: Row(
+              children: [
+                const Icon(Icons.lightbulb_outline,
+                    size: 13, color: AppTheme.level1Color),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'StreamBuilder + .snapshots() → real-time, no polling',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                  ),
+                ),
+              ],
+            ),
           ),
 
-          // 🔑 KEY CONCEPT: StreamBuilder listens to Firestore stream
-          // Every time a new message is added to Firestore,
-          // this widget automatically rebuilds — zero manual refresh needed.
+          // 🔑 KEY: StreamBuilder lắng nghe Firestore stream
+          // Khi thiết bị khác gửi message → Firestore push → widget rebuild
           Expanded(
             child: StreamBuilder<List<Message>>(
-              stream: ChatService().getMessages(chatRoom.id),
+              stream: ChatService().getMessages(widget.chatRoom.id),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
                 final messages = snapshot.data ?? [];
+
+                // Auto scroll khi có message mới
+                WidgetsBinding.instance.addPostFrameCallback(
+                    (_) => _scrollToBottom());
+
                 if (messages.isEmpty) {
                   return const Center(
-                    child: Text('No messages yet.\nSay hello! 👋',
-                        textAlign: TextAlign.center),
+                    child: Text(
+                      'No messages yet.\nSay hello! 👋',
+                      textAlign: TextAlign.center,
+                    ),
                   );
                 }
                 return ListView.builder(
+                  controller: _scrollController,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final msg = messages[index];
                     return MessageBubble(
                       message: msg,
-                      isMe: msg.senderId == currentUser.uid,
+                      isMe: msg.senderId == widget.currentUser.uid,
                     );
                   },
                 );
@@ -95,13 +156,12 @@ class ChatScreen extends StatelessWidget {
             ),
           ),
 
-          // Message input
           MessageInput(
             onSend: (text) => ChatService().sendMessage(
-              chatRoomId: chatRoom.id,
+              chatRoomId: widget.chatRoom.id,
               content: text,
-              senderId: currentUser.uid,
-              senderName: currentUser.displayName,
+              senderId: widget.currentUser.uid,
+              senderName: widget.currentUser.displayName,
             ),
           ),
         ],
@@ -119,28 +179,26 @@ class ChatScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _CodeNote(
-                title: 'StreamBuilder (real-time UI)',
+                title: '1. StreamBuilder (real-time UI)',
                 code: 'StreamBuilder<List<Message>>(\n'
                     '  stream: chatService.getMessages(id),\n'
-                    '  builder: (context, snapshot) {\n'
-                    '    // rebuilds automatically\n'
-                    '    // when new message arrives\n'
-                    '  },\n'
+                    '  // auto-rebuilds on new message\n'
                     ')',
               ),
               SizedBox(height: 12),
               _CodeNote(
-                title: 'Batch Write (atomicity)',
-                code: 'final batch = firestore.batch();\n'
-                    'batch.set(messageRef, msgData);\n'
-                    'batch.update(chatRef, lastMsg);\n'
-                    'await batch.commit(); // atomic',
+                title: '2. Firestore .snapshots()',
+                code: 'collection("chats/\$id/messages")\n'
+                    '  .orderBy("timestamp")\n'
+                    '  .snapshots() // WebSocket under hood',
               ),
               SizedBox(height: 12),
               _CodeNote(
-                title: 'Server Timestamp',
-                code: "'timestamp': FieldValue\n"
-                    '    .serverTimestamp()',
+                title: '3. Batch Write (atomic)',
+                code: 'final batch = firestore.batch();\n'
+                    'batch.set(messageRef, msgData);\n'
+                    'batch.update(chatRef, lastMsg);\n'
+                    'await batch.commit(); // all-or-nothing',
               ),
             ],
           ),
@@ -156,36 +214,9 @@ class ChatScreen extends StatelessWidget {
   }
 }
 
-class _ConceptBanner extends StatelessWidget {
-  final String text;
-  final Color color;
-
-  const _ConceptBanner({required this.text, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: color.withOpacity(0.1),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: Row(
-        children: [
-          Icon(Icons.lightbulb_outline, size: 13, color: color),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(text,
-                style: TextStyle(fontSize: 11, color: Colors.grey[700])),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _CodeNote extends StatelessWidget {
   final String title;
   final String code;
-
   const _CodeNote({required this.title, required this.code});
 
   @override
@@ -203,10 +234,8 @@ class _CodeNote extends StatelessWidget {
             color: Colors.grey[100],
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Text(
-            code,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-          ),
+          child: Text(code,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
         ),
       ],
     );

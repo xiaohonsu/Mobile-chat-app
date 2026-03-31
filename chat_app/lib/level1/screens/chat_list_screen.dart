@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/models/chat_room.dart';
+import '../../core/models/user_model.dart';
 import '../../core/theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
+import 'new_chat_screen.dart';
 
 class ChatListScreen extends StatelessWidget {
   const ChatListScreen({super.key});
@@ -37,9 +39,18 @@ class ChatListScreen extends StatelessWidget {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppTheme.primaryLight,
+        child: const Icon(Icons.chat, color: Colors.white),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => NewChatScreen(currentUser: currentUser),
+          ),
+        ),
+      ),
       body: Column(
         children: [
-          // Level indicator banner
           Container(
             width: double.infinity,
             color: AppTheme.level1Color.withOpacity(0.1),
@@ -51,28 +62,54 @@ class ChatListScreen extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'StreamBuilder listens to Firestore .snapshots() — '
-                    'messages update in real-time without polling.',
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey[700]),
+                    'StreamBuilder + Firestore .snapshots() — '
+                    'real-time, no polling.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                   ),
                 ),
               ],
             ),
           ),
           Expanded(
-            // 🔑 KEY CONCEPT: StreamBuilder + Firestore .snapshots()
-            // In production: ChatService().getChatRooms() returns
-            // FirebaseFirestore.collection('chats').snapshots()
+            // 🔑 KEY: StreamBuilder lắng nghe Firestore stream
+            // Mỗi khi có tin nhắn mới → Firestore push → ListView rebuild
             child: StreamBuilder<List<ChatRoom>>(
               stream: ChatService().getChatRooms(currentUser.uid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text('Error: ${snapshot.error}'),
+                  );
+                }
                 final rooms = snapshot.data ?? [];
                 if (rooms.isEmpty) {
-                  return const Center(child: Text('No conversations yet'));
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline,
+                            size: 64, color: Colors.grey[300]),
+                        const SizedBox(height: 16),
+                        Text('No conversations yet.',
+                            style: TextStyle(color: Colors.grey[500])),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  NewChatScreen(currentUser: currentUser),
+                            ),
+                          ),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Start a chat'),
+                        ),
+                      ],
+                    ),
+                  );
                 }
                 return ListView.separated(
                   itemCount: rooms.length,
@@ -124,54 +161,27 @@ class _RoomTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       leading: CircleAvatar(
-        backgroundColor: room.isGroup
-            ? AppTheme.secondary
-            : AppTheme.primary,
+        backgroundColor:
+            room.isGroup ? AppTheme.secondary : AppTheme.primary,
         child: Text(initials,
             style: const TextStyle(color: Colors.white, fontSize: 16)),
       ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(name,
+          style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: lastMsg != null
           ? Text(
               lastMsg.content,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: room.unreadCount > 0
-                    ? Colors.black87
-                    : Colors.grey[600],
-                fontWeight: room.unreadCount > 0
-                    ? FontWeight.w500
-                    : FontWeight.normal,
-              ),
+              style: TextStyle(color: Colors.grey[600]),
             )
           : null,
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (lastMsg != null)
-            Text(
+      trailing: lastMsg != null
+          ? Text(
               _formatTime(lastMsg.timestamp),
-              style: TextStyle(
-                fontSize: 11,
-                color: room.unreadCount > 0
-                    ? AppTheme.primaryLight
-                    : Colors.grey[500],
-              ),
-            ),
-          const SizedBox(height: 4),
-          if (room.unreadCount > 0)
-            CircleAvatar(
-              radius: 10,
-              backgroundColor: AppTheme.primaryLight,
-              child: Text(
-                '${room.unreadCount}',
-                style: const TextStyle(fontSize: 11, color: Colors.white),
-              ),
-            ),
-        ],
-      ),
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+            )
+          : null,
     );
   }
 

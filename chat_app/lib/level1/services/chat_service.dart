@@ -1,281 +1,185 @@
-import 'dart:async';
-import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/models/chat_room.dart';
 import '../../core/models/message.dart';
-import '../../core/models/user_model.dart';
 
 /// Level 1 — Chat Service
+/// Firestore database structure:
 ///
-/// DEMO MODE: In-memory StreamController simulates Firestore real-time.
-/// PRODUCTION: Replace with Firebase Firestore implementation.
+/// users/{uid}
+///   displayName, email, isOnline, lastSeen
 ///
-/// Firebase implementation:
-/// ```dart
-/// // Get chat rooms for current user
-/// Stream<List<ChatRoom>> getChatRooms(String uid) {
-///   return FirebaseFirestore.instance
-///       .collection('chats')
-///       .where('memberIds', arrayContains: uid)
-///       .orderBy('lastMessageTime', descending: true)
-///       .snapshots()
-///       .map((snap) => snap.docs.map(ChatRoom.fromFirestore).toList());
-/// }
+/// chats/{chatId}
+///   memberIds: [uid1, uid2]
+///   memberNames: [name1, name2]
+///   lastMessage: string
+///   lastMessageTime: timestamp
+///   isGroup: bool
+///   groupName: string?
+///   unreadCount: int (per member — simplified)
 ///
-/// // Get messages — REAL-TIME via .snapshots()
-/// Stream<List<Message>> getMessages(String chatRoomId) {
-///   return FirebaseFirestore.instance
-///       .collection('chats/$chatRoomId/messages')
-///       .orderBy('timestamp', descending: false)
-///       .snapshots()
-///       .map((snap) => snap.docs.map(Message.fromFirestore).toList());
-/// }
-///
-/// // Send message — Batch write for atomicity
-/// Future<void> sendMessage(String chatRoomId, String content, String senderId) async {
-///   final batch = FirebaseFirestore.instance.batch();
-///   final msgRef = FirebaseFirestore.instance
-///       .collection('chats/$chatRoomId/messages').doc();
-///   batch.set(msgRef, {
-///     'senderId': senderId,
-///     'content': content,
-///     'timestamp': FieldValue.serverTimestamp(),  // server time
-///     'status': 'sent',
-///   });
-///   batch.update(
-///     FirebaseFirestore.instance.collection('chats').doc(chatRoomId),
-///     {'lastMessage': content, 'lastMessageTime': FieldValue.serverTimestamp()},
-///   );
-///   await batch.commit(); // ATOMIC — both succeed or both fail
-/// }
-/// ```
+/// chats/{chatId}/messages/{msgId}
+///   senderId, senderName, content, type, timestamp, status
 
 class ChatService {
   static final ChatService _instance = ChatService._();
   factory ChatService() => _instance;
-  ChatService._() {
-    _initMockData();
-  }
+  ChatService._();
 
-  static const _uuid = Uuid();
+  final _db = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
 
-  // In-memory "database"
-  final _rooms = <String, ChatRoom>{};
-  final _messages = <String, List<Message>>{};
-  final _roomControllers = <String, StreamController<List<Message>>>{};
-  final _roomListController =
-      StreamController<List<ChatRoom>>.broadcast();
+  // ─── Chat Rooms ─────────────────────────────────────────────
 
-  void _initMockData() {
-    // Seed mock chat rooms
-    final rooms = [
-      ChatRoom(
-        id: 'room_1',
-        memberIds: const ['uid_alice', 'uid_bob'],
-        memberNames: const ['Alice Nguyen', 'Bob Tran'],
-        lastMessage: Message(
-          id: 'm0',
-          senderId: 'uid_bob',
-          senderName: 'Bob Tran',
-          content: 'Hey Alice! How are you?',
-          timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
-          status: MessageStatus.seen,
-        ),
-        unreadCount: 1,
-      ),
-      ChatRoom(
-        id: 'room_2',
-        memberIds: const ['uid_alice', 'uid_carol'],
-        memberNames: const ['Alice Nguyen', 'Carol Le'],
-        lastMessage: Message(
-          id: 'm1',
-          senderId: 'uid_alice',
-          senderName: 'Alice Nguyen',
-          content: 'The Flutter seminar is tomorrow!',
-          timestamp: DateTime.now().subtract(const Duration(hours: 1)),
-          status: MessageStatus.delivered,
-        ),
-      ),
-      ChatRoom(
-        id: 'room_3',
-        memberIds: const ['uid_bob', 'uid_carol', 'uid_alice'],
-        memberNames: const ['Bob Tran', 'Carol Le', 'Alice Nguyen'],
-        isGroup: true,
-        groupName: 'Flutter Team',
-        lastMessage: Message(
-          id: 'm2',
-          senderId: 'uid_carol',
-          senderName: 'Carol Le',
-          content: "Don't forget to push the code!",
-          timestamp: DateTime.now().subtract(const Duration(hours: 3)),
-          status: MessageStatus.delivered,
-        ),
-        unreadCount: 2,
-      ),
-    ];
-
-    for (final room in rooms) {
-      _rooms[room.id] = room;
-      _messages[room.id] = [];
-    }
-
-    // Seed initial messages for room_1
-    _messages['room_1'] = [
-      Message(
-        id: _uuid.v4(),
-        senderId: 'uid_bob',
-        senderName: 'Bob Tran',
-        content: 'Hey Alice! How are you?',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 10)),
-        status: MessageStatus.seen,
-      ),
-      Message(
-        id: _uuid.v4(),
-        senderId: 'uid_alice',
-        senderName: 'Alice Nguyen',
-        content: "I'm great! Ready for the seminar?",
-        timestamp: DateTime.now().subtract(const Duration(minutes: 8)),
-        status: MessageStatus.seen,
-      ),
-      Message(
-        id: _uuid.v4(),
-        senderId: 'uid_bob',
-        senderName: 'Bob Tran',
-        content: 'Yes! I finished the Level 1 demo.',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
-        status: MessageStatus.delivered,
-      ),
-    ];
-  }
-
-  /// Stream danh sách chat rooms.
-  /// Firebase: collection('chats').where('memberIds', arrayContains: uid).snapshots()
+  /// Stream danh sách chat rooms của user hiện tại.
+  /// Real-time: Firestore tự push khi có thay đổi.
   Stream<List<ChatRoom>> getChatRooms(String uid) {
-    Future.microtask(() => _emitRooms(uid));
-    return _roomListController.stream
-        .map((rooms) => rooms.where((r) => r.memberIds.contains(uid)).toList());
+    return _db
+        .collection('chats')
+        .where('memberIds', arrayContains: uid)
+        .orderBy('lastMessageTime', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map(_roomFromDoc).toList());
   }
 
-  void _emitRooms(String uid) {
-    _roomListController.add(_rooms.values.toList());
+  ChatRoom _roomFromDoc(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    Message? lastMsg;
+    if (data['lastMessage'] != null) {
+      lastMsg = Message(
+        id: 'last',
+        senderId: data['lastSenderId'] ?? '',
+        senderName: data['lastSenderName'] ?? '',
+        content: data['lastMessage'] as String,
+        timestamp: (data['lastMessageTime'] as Timestamp?)?.toDate() ??
+            DateTime.now(),
+        status: MessageStatus.delivered,
+      );
+    }
+    return ChatRoom(
+      id: doc.id,
+      memberIds: List<String>.from(data['memberIds'] ?? []),
+      memberNames: List<String>.from(data['memberNames'] ?? []),
+      lastMessage: lastMsg,
+      isGroup: data['isGroup'] as bool? ?? false,
+      groupName: data['groupName'] as String?,
+    );
   }
+
+  /// Tạo hoặc lấy chat room 1-1 giữa 2 users.
+  /// Dùng chatId = sorted uid1_uid2 để tránh tạo duplicate.
+  Future<String> getOrCreateChatRoom({
+    required String uid1,
+    required String name1,
+    required String uid2,
+    required String name2,
+  }) async {
+    final ids = [uid1, uid2]..sort();
+    final chatId = '${ids[0]}_${ids[1]}';
+    final ref = _db.collection('chats').doc(chatId);
+
+    final doc = await ref.get();
+    if (!doc.exists) {
+      await ref.set({
+        'memberIds': [uid1, uid2],
+        'memberNames': [name1, name2],
+        'isGroup': false,
+        'lastMessage': null,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+    return chatId;
+  }
+
+  // ─── Messages ────────────────────────────────────────────────
 
   /// Stream messages real-time.
-  /// Firebase: collection('chats/$id/messages').snapshots()
+  /// .snapshots() = Firestore maintains WebSocket connection,
+  /// pushes updates automatically — no polling needed.
   Stream<List<Message>> getMessages(String chatRoomId) {
-    _roomControllers[chatRoomId] ??=
-        StreamController<List<Message>>.broadcast();
-    // emit current messages immediately
-    Future.microtask(() {
-      _roomControllers[chatRoomId]
-          ?.add(List.from(_messages[chatRoomId] ?? []));
-    });
-    return _roomControllers[chatRoomId]!.stream;
+    return _db
+        .collection('chats/$chatRoomId/messages')
+        .orderBy('timestamp', descending: false)
+        .snapshots()
+        .map((snap) => snap.docs.map(_msgFromDoc).toList());
   }
 
-  /// Gửi tin nhắn — Firebase: batch.commit() (atomic)
+  Message _msgFromDoc(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Message(
+      id: doc.id,
+      senderId: data['senderId'] as String,
+      senderName: data['senderName'] as String,
+      content: data['content'] as String,
+      type: MessageType.values.byName(data['type'] as String? ?? 'text'),
+      timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      status: MessageStatus.values.byName(data['status'] as String? ?? 'sent'),
+    );
+  }
+
+  /// Gửi tin nhắn — Batch write đảm bảo atomicity.
+  /// Cả 2 thao tác (thêm message + cập nhật lastMessage) thành công hoặc
+  /// thất bại cùng nhau — không bao giờ bị inconsistent state.
   Future<void> sendMessage({
     required String chatRoomId,
     required String content,
     required String senderId,
     required String senderName,
+    MessageType type = MessageType.text,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 100)); // simulate latency
+    final batch = _db.batch();
 
-    final message = Message(
-      id: _uuid.v4(),
-      senderId: senderId,
-      senderName: senderName,
-      content: content,
-      timestamp: DateTime.now(),
-      status: MessageStatus.sent,
-    );
-
-    _messages[chatRoomId] ??= [];
-    _messages[chatRoomId]!.add(message);
-
-    // Firebase: batch.update(chatRef, {'lastMessage': content})
-    final room = _rooms[chatRoomId];
-    if (room != null) {
-      _rooms[chatRoomId] = room.copyWith(lastMessage: message);
-    }
-
-    // Push to streams (Firebase: this happens automatically via .snapshots())
-    _roomControllers[chatRoomId]
-        ?.add(List.from(_messages[chatRoomId]!));
-    _roomListController.add(_rooms.values.toList());
-
-    // Simulate delivered status after 1s
-    Future.delayed(const Duration(seconds: 1), () {
-      final msgs = _messages[chatRoomId];
-      if (msgs == null) return;
-      final idx = msgs.indexWhere((m) => m.id == message.id);
-      if (idx >= 0) {
-        msgs[idx] = msgs[idx].copyWith(status: MessageStatus.delivered);
-        _roomControllers[chatRoomId]?.add(List.from(msgs));
-      }
+    // 1. Thêm message vào subcollection
+    final messageRef =
+        _db.collection('chats/$chatRoomId/messages').doc();
+    batch.set(messageRef, {
+      'senderId': senderId,
+      'senderName': senderName,
+      'content': content,
+      'type': type.name,
+      'timestamp': FieldValue.serverTimestamp(), // server time, không dùng device time
+      'status': MessageStatus.sent.name,
     });
 
-    // Simulate auto-reply for demo
-    _scheduleAutoReply(chatRoomId, senderId);
-  }
-
-  void _scheduleAutoReply(String chatRoomId, String senderId) {
-    final room = _rooms[chatRoomId];
-    if (room == null) return;
-    final otherMember =
-        room.memberIds.firstWhere((id) => id != senderId, orElse: () => '');
-    if (otherMember.isEmpty) return;
-    final otherName =
-        room.memberNames[room.memberIds.indexOf(otherMember)];
-
-    final replies = [
-      'Got it! 👍',
-      'Sure, sounds good!',
-      'That makes sense.',
-      'Can you tell me more?',
-      'Interesting! 🔥',
-      'Okay, noted!',
-    ];
-    final reply = replies[DateTime.now().second % replies.length];
-
-    Future.delayed(const Duration(seconds: 2), () {
-      final autoMsg = Message(
-        id: _uuid.v4(),
-        senderId: otherMember,
-        senderName: otherName,
-        content: reply,
-        timestamp: DateTime.now(),
-        status: MessageStatus.delivered,
-      );
-      _messages[chatRoomId]?.add(autoMsg);
-      _roomControllers[chatRoomId]
-          ?.add(List.from(_messages[chatRoomId]!));
-      _rooms[chatRoomId] =
-          _rooms[chatRoomId]!.copyWith(lastMessage: autoMsg);
-      _roomListController.add(_rooms.values.toList());
+    // 2. Cập nhật lastMessage ở chat room (atomic)
+    final chatRef = _db.collection('chats').doc(chatRoomId);
+    batch.update(chatRef, {
+      'lastMessage': content,
+      'lastSenderId': senderId,
+      'lastSenderName': senderName,
+      'lastMessageTime': FieldValue.serverTimestamp(),
     });
+
+    await batch.commit();
   }
 
-  List<UserModel> getAllUsers() {
-    return [
-      UserModel(
-          uid: 'uid_alice',
-          displayName: 'Alice Nguyen',
-          email: 'user1@demo.com',
-          isOnline: true,
-          lastSeen: DateTime.now()),
-      UserModel(
-          uid: 'uid_bob',
-          displayName: 'Bob Tran',
-          email: 'user2@demo.com',
-          isOnline: true,
-          lastSeen: DateTime.now()),
-      UserModel(
-          uid: 'uid_carol',
-          displayName: 'Carol Le',
-          email: 'user3@demo.com',
-          isOnline: false,
-          lastSeen: DateTime.now().subtract(const Duration(hours: 1))),
-    ];
+  /// Cập nhật status tin nhắn (seen/delivered)
+  Future<void> updateMessageStatus(
+      String chatRoomId, String messageId, MessageStatus status) async {
+    await _db
+        .collection('chats/$chatRoomId/messages')
+        .doc(messageId)
+        .update({'status': status.name});
+  }
+
+  /// Cập nhật online presence trong Firestore
+  /// Được dùng thay WebSocket presence ở Level 1
+  Stream<bool> watchUserOnline(String uid) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .map((doc) => doc.data()?['isOnline'] as bool? ?? false);
+  }
+
+  /// Lấy danh sách users để tạo chat mới
+  Future<List<Map<String, dynamic>>> getAvailableUsers() async {
+    final currentUid = _auth.currentUser?.uid ?? '';
+    final snap = await _db.collection('users').get();
+    return snap.docs
+        .where((doc) => doc.id != currentUid)
+        .map((doc) => {'uid': doc.id, ...doc.data()})
+        .toList();
   }
 }
