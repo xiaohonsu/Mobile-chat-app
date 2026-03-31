@@ -134,6 +134,9 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
   Widget build(BuildContext context) {
     final otherName = widget.chatRoom.displayName(widget.currentUser.uid);
 
+    final isGroup = widget.chatRoom.isGroup;
+    final memberCount = widget.chatRoom.memberIds.length;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -141,24 +144,32 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
         title: Row(
           children: [
             CircleAvatar(
-              backgroundColor: AppTheme.level3Color.withOpacity(0.7),
-              child: Text(
-                otherName.isNotEmpty ? otherName[0].toUpperCase() : '?',
-                style: const TextStyle(color: Colors.white),
-              ),
+              backgroundColor: isGroup
+                  ? Colors.purple.withOpacity(0.7)
+                  : AppTheme.level3Color.withOpacity(0.7),
+              child: isGroup
+                  ? const Icon(Icons.group, color: Colors.white, size: 20)
+                  : Text(
+                      otherName.isNotEmpty ? otherName[0].toUpperCase() : '?',
+                      style: const TextStyle(color: Colors.white),
+                    ),
             ),
             const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(otherName, style: const TextStyle(fontSize: 15)),
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.lock, size: 10, color: Colors.greenAccent),
-                    SizedBox(width: 3),
-                    Text('E2EE enabled',
-                        style:
-                            TextStyle(fontSize: 10, color: Colors.white70)),
+                    const Icon(Icons.lock, size: 10, color: Colors.greenAccent),
+                    const SizedBox(width: 3),
+                    Text(
+                      isGroup
+                          ? 'E2EE · $memberCount members'
+                          : 'E2EE enabled',
+                      style: const TextStyle(
+                          fontSize: 10, color: Colors.white70),
+                    ),
                   ],
                 ),
               ],
@@ -231,6 +242,18 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (widget.chatRoom.isGroup) ...[
+                    Row(children: [
+                      const Icon(Icons.group, size: 13, color: Colors.purple),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Group: ${widget.chatRoom.memberNames.join(", ")}',
+                        style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ]),
+                    const SizedBox(height: 4),
+                  ],
                   const Row(children: [
                     Icon(Icons.vpn_key, size: 13, color: Colors.amber),
                     SizedBox(width: 6),

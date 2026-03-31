@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/models/chat_room.dart';
@@ -5,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../level1/services/auth_service.dart';
 import '../../level1/services/chat_service.dart';
 import '../../level1/screens/login_screen.dart';
+import '../services/notification_service.dart';
 import '../services/websocket_service.dart';
 import 'chat_screen.dart';
 
@@ -18,17 +20,62 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen> {
   final _searchCtrl = TextEditingController();
   String _query = '';
+  StreamSubscription? _notifSub;
+  final Map<String, int> _lastMsgTime = {};
+  bool _notifFirstLoad = true;
 
   @override
   void initState() {
     super.initState();
     final user = AuthService().currentUser;
-    if (user != null) WebSocketService().connect(user.uid);
+    if (user != null) {
+      WebSocketService().connect(user.uid);
+      _setupNotificationListener(user.uid);
+    }
+  }
+
+  void _setupNotificationListener(String uid) {
+    _notifSub = ChatService().getChatRooms(uid).listen((rooms) {
+      if (_notifFirstLoad) {
+        // First snapshot — just record current timestamps, don't notify
+        for (final room in rooms) {
+          if (room.lastMessage != null) {
+            _lastMsgTime[room.id] =
+                room.lastMessage!.timestamp.millisecondsSinceEpoch;
+          }
+        }
+        _notifFirstLoad = false;
+        return;
+      }
+
+      for (final room in rooms) {
+        if (room.lastMessage == null) continue;
+        final msg = room.lastMessage!;
+
+        // Skip own messages
+        if (msg.senderId == uid) continue;
+        // Skip if user is currently in this chat
+        if (ActiveChatTracker.activeChatRoomId == room.id) continue;
+
+        final prevTime = _lastMsgTime[room.id] ?? 0;
+        final newTime = msg.timestamp.millisecondsSinceEpoch;
+
+        if (newTime > prevTime) {
+          _lastMsgTime[room.id] = newTime;
+          NotificationService().showMessageNotification(
+            senderName: msg.senderName,
+            message: msg.content,
+            chatRoomId: room.id,
+          );
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _notifSub?.cancel();
     super.dispose();
   }
 

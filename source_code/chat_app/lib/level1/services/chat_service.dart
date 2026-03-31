@@ -243,6 +243,24 @@ class ChatService {
         });
   }
 
+  Future<String> createEncryptedGroupChat({
+    required String groupName,
+    required List<String> memberIds,
+    required List<String> memberNames,
+  }) async {
+    final ref = _db.collection(_encPrefix).doc(); // auto-generated ID
+    await ref.set({
+      'memberIds': memberIds,
+      'memberNames': memberNames,
+      'isGroup': true,
+      'groupName': groupName,
+      'lastMessage': null,
+      'lastMessageTime': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return ref.id;
+  }
+
   Future<String> getOrCreateEncryptedChatRoom({
     required String uid1,
     required String name1,

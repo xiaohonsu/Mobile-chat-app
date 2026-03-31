@@ -7,6 +7,7 @@ import '../../core/widgets/message_bubble.dart';
 import '../../core/widgets/message_input.dart';
 import '../../level1/services/chat_service.dart';
 import '../blocs/chat_bloc.dart';
+import '../services/notification_service.dart';
 import '../services/websocket_service.dart';
 
 class Level2ChatScreen extends StatefulWidget {
@@ -30,12 +31,14 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
   @override
   void initState() {
     super.initState();
+    ActiveChatTracker.activeChatRoomId = widget.chatRoom.id;
     _bloc = ChatBloc(widget.chatRoom.id)
       ..add(LoadMessages(widget.chatRoom.id));
   }
 
   @override
   void dispose() {
+    ActiveChatTracker.activeChatRoomId = null;
     _bloc.close();
     _scrollController.dispose();
     // Clear typing status when leaving chat

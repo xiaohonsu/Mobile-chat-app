@@ -7,9 +7,67 @@ import '../../level1/screens/new_chat_screen.dart';
 import '../../level1/services/auth_service.dart';
 import '../../level1/services/chat_service.dart';
 import 'chat_screen.dart';
+import 'new_group_screen.dart';
 
 class Level3ChatListScreen extends StatelessWidget {
   const Level3ChatListScreen({super.key});
+
+  void _showNewOptions(BuildContext context, currentUser) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppTheme.level3Color.withOpacity(0.15),
+                child: const Icon(Icons.lock, color: AppTheme.level3Color),
+              ),
+              title: const Text('New Encrypted Chat',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('1-on-1 encrypted conversation'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => NewChatScreen(
+                      currentUser: currentUser, useEncrypted: true),
+                ));
+              },
+            ),
+            ListTile(
+              leading: CircleAvatar(
+                backgroundColor: Colors.purple.withOpacity(0.15),
+                child: const Icon(Icons.group, color: Colors.purple),
+              ),
+              title: const Text('New Group Chat',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('Encrypted group with multiple members'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => NewGroupScreen(currentUser: currentUser),
+                ));
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,13 +100,8 @@ class Level3ChatListScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppTheme.level3Color,
-        child: const Icon(Icons.chat, color: Colors.white),
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => NewChatScreen(currentUser: currentUser, useEncrypted: true),
-          ),
-        ),
+        child: const Icon(Icons.add, color: Colors.white),
+        onPressed: () => _showNewOptions(context, currentUser),
       ),
       body: Column(
         children: [

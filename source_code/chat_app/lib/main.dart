@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'level2/services/local_cache_service.dart';
+import 'level2/services/notification_service.dart';
 import 'level_selector_screen.dart';
 
 void main() async {
@@ -15,6 +16,7 @@ void main() async {
   }
 
   await LocalCacheService.init();
+  await NotificationService().init();
 
   runApp(const ChatApp());
 }
