@@ -101,15 +101,60 @@ class ChatService {
 
   // ─── Messages ────────────────────────────────────────────────
 
-  /// Stream messages real-time.
+  /// Stream messages real-time (newest 50 messages).
   /// .snapshots() = Firestore maintains WebSocket connection,
   /// pushes updates automatically — no polling needed.
-  Stream<List<Message>> getMessages(String chatRoomId) {
+  Stream<List<Message>> getMessages(String chatRoomId, {int limit = 50}) {
     return _db
         .collection('chats/$chatRoomId/messages')
         .orderBy('timestamp', descending: false)
+        .limitToLast(limit)
         .snapshots()
         .map((snap) => snap.docs.map(_msgFromDoc).toList());
+  }
+
+  /// Fetch older messages before a given document (pagination).
+  /// Returns messages in ascending order (oldest first).
+  Future<List<Message>> getOlderMessages(
+      String chatRoomId, DocumentSnapshot beforeDoc,
+      {int limit = 30}) async {
+    final snap = await _db
+        .collection('chats/$chatRoomId/messages')
+        .orderBy('timestamp', descending: true)
+        .startAfterDocument(beforeDoc)
+        .limit(limit)
+        .get();
+    return snap.docs.reversed.map(_msgFromDoc).toList();
+  }
+
+  /// Get the raw Firestore snapshot of the oldest loaded message (for pagination).
+  Future<DocumentSnapshot?> getFirstMessageDoc(String chatRoomId) async {
+    final snap = await _db
+        .collection('chats/$chatRoomId/messages')
+        .orderBy('timestamp', descending: false)
+        .limit(1)
+        .get();
+    return snap.docs.isEmpty ? null : snap.docs.first;
+  }
+
+  /// Load [limit] messages older than the message with [messageId].
+  /// Used by ChatBloc for cursor-based pagination ("load more").
+  Future<List<Message>> getOlderMessagesById(
+      String chatRoomId, String messageId,
+      {int limit = 30}) async {
+    // Fetch the pivot document first
+    final pivot =
+        await _db.collection('chats/$chatRoomId/messages').doc(messageId).get();
+    if (!pivot.exists) return [];
+
+    final snap = await _db
+        .collection('chats/$chatRoomId/messages')
+        .orderBy('timestamp', descending: true)
+        .startAfterDocument(pivot)
+        .limit(limit)
+        .get();
+    // Reverse so messages are in ascending order
+    return snap.docs.reversed.map(_msgFromDoc).toList();
   }
 
   Message _msgFromDoc(QueryDocumentSnapshot doc) {
@@ -169,6 +214,30 @@ class ChatService {
         .collection('chats/$chatRoomId/messages')
         .doc(messageId)
         .update({'status': status.name});
+  }
+
+  /// Mark all messages NOT sent by currentUserId as 'seen'.
+  /// Called when the user opens a chat room.
+  Future<void> markMessagesAsSeen(
+      String chatRoomId, String currentUserId) async {
+    // Firestore doesn't allow isNotEqualTo + whereIn together,
+    // so filter own messages in Dart after fetching.
+    final snap = await _db
+        .collection('chats/$chatRoomId/messages')
+        .where('status', whereIn: [
+          MessageStatus.sent.name,
+          MessageStatus.delivered.name,
+        ])
+        .get();
+    if (snap.docs.isEmpty) return;
+
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      final senderId = (doc.data() as Map<String, dynamic>)['senderId'] as String? ?? '';
+      if (senderId == currentUserId) continue; // skip own messages
+      batch.update(doc.reference, {'status': MessageStatus.seen.name});
+    }
+    await batch.commit();
   }
 
   /// Stream typing status của các user khác trong chat room.

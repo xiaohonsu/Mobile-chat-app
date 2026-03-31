@@ -32,6 +32,7 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
   void initState() {
     super.initState();
     ActiveChatTracker.activeChatRoomId = widget.chatRoom.id;
+    WebSocketService().joinRoom(widget.chatRoom.id);
     _bloc = ChatBloc(widget.chatRoom.id)
       ..add(LoadMessages(widget.chatRoom.id));
   }
@@ -39,6 +40,7 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
   @override
   void dispose() {
     ActiveChatTracker.activeChatRoomId = null;
+    WebSocketService().leaveRoom(widget.chatRoom.id);
     _bloc.close();
     _scrollController.dispose();
     // Clear typing status when leaving chat
@@ -171,8 +173,14 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
                         banner: 'Loaded from local cache');
                   }
 
+                  if (state is ChatLoadingMore) {
+                    return _buildMessageList(state.messages,
+                        hasMore: state.hasMore, loadingMore: true);
+                  }
+
                   if (state is ChatLoaded) {
                     return _buildMessageList(state.messages,
+                        hasMore: state.hasMore,
                         offlineBanner: state.isOffline
                             ? 'Offline — showing cached messages'
                             : null);
@@ -256,6 +264,8 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
     List<dynamic> messages, {
     String? banner,
     String? offlineBanner,
+    bool hasMore = false,
+    bool loadingMore = false,
   }) {
     return Column(
       children: [
@@ -282,6 +292,34 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
                     style: const TextStyle(
                         fontSize: 11, color: Colors.orange)),
               ],
+            ),
+          ),
+        // ── Load More button ──────────────────────────────
+        if (hasMore || loadingMore)
+          GestureDetector(
+            onTap: loadingMore
+                ? null
+                : () => _bloc.add(LoadMoreMessages(widget.chatRoom.id)),
+            child: Container(
+              width: double.infinity,
+              color: AppTheme.level2Color.withOpacity(0.08),
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Center(
+                child: loadingMore
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        'Load earlier messages',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.level2Color,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+              ),
             ),
           ),
         Expanded(

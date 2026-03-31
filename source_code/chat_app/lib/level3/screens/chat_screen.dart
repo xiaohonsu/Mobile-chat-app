@@ -34,8 +34,10 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
   @override
   void initState() {
     super.initState();
-    _encryption.generateKeyPair(widget.currentUser.uid);
-    _keysGenerated = true;
+    // Load or generate key pair from secure storage asynchronously
+    _encryption.getOrCreateKeyPair(widget.currentUser.uid).then((_) {
+      if (mounted) setState(() => _keysGenerated = true);
+    });
   }
 
   Future<void> _sendMessage(String text) async {
@@ -330,7 +332,7 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
                     if (_showEncryptedView) {
                       displayContent = msg.content; // raw ciphertext from Firestore
                     } else {
-                      final privKey = _encryption.getKeyPair(widget.currentUser.uid)?.privateKey ?? '';
+                      final privKey = _encryption.getCachedKeyPair(widget.currentUser.uid)?.privateKey ?? '';
                       displayContent = _encryption.decrypt(msg.content, privKey);
                     }
 

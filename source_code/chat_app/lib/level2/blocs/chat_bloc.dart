@@ -24,6 +24,14 @@ class LoadMessages extends ChatEvent {
   List<Object?> get props => [chatRoomId];
 }
 
+class LoadMoreMessages extends ChatEvent {
+  final String chatRoomId;
+  LoadMoreMessages(this.chatRoomId);
+
+  @override
+  List<Object?> get props => [chatRoomId];
+}
+
 class SendMessage extends ChatEvent {
   final String chatRoomId;
   final String content;
@@ -75,10 +83,15 @@ class ChatCached extends ChatState {
 class ChatLoaded extends ChatState {
   final List<Message> messages;
   final bool isOffline;
-  ChatLoaded(this.messages, {this.isOffline = false});
+  final bool hasMore; // whether older messages exist to load
+  ChatLoaded(this.messages, {this.isOffline = false, this.hasMore = false});
 
   @override
-  List<Object?> get props => [messages, isOffline];
+  List<Object?> get props => [messages, isOffline, hasMore];
+}
+
+class ChatLoadingMore extends ChatLoaded {
+  ChatLoadingMore(super.messages, {super.hasMore});
 }
 
 class ChatError extends ChatState {
@@ -96,11 +109,14 @@ class ChatError extends ChatState {
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final String chatRoomId;
   StreamSubscription? _messagesSub;
+  // Tracks prepended older messages (pagination)
+  final List<Message> _olderMessages = [];
 
   static const _uuid = Uuid();
 
   ChatBloc(this.chatRoomId) : super(ChatInitial()) {
     on<LoadMessages>(_onLoadMessages);
+    on<LoadMoreMessages>(_onLoadMoreMessages);
     on<SendMessage>(_onSendMessage);
     on<_NewMessageReceived>(_onNewMessages);
     on<TypingStarted>(_onTypingStarted);
@@ -123,12 +139,72 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _messagesSub = ChatService()
         .getMessages(chatRoomId)
         .listen((messages) => add(_NewMessageReceived(messages)));
+
+    // Step 3: Mark incoming messages as seen
+    final user = AuthService().currentUser;
+    if (user != null) {
+      ChatService().markMessagesAsSeen(chatRoomId, user.uid);
+    }
+  }
+
+  Future<void> _onLoadMoreMessages(
+      LoadMoreMessages event, Emitter<ChatState> emit) async {
+    final current = state is ChatLoaded ? (state as ChatLoaded) : null;
+    if (current == null || current is ChatLoadingMore) return;
+
+    emit(ChatLoadingMore(current.messages, hasMore: current.hasMore));
+
+    // Find the oldest message doc in Firestore for cursor-based pagination
+    final allMessages = [..._olderMessages, ...current.messages];
+    if (allMessages.isEmpty) return;
+
+    // We use the oldest message ID as the cursor
+    final oldestId = allMessages.first.id;
+    try {
+      // Fetch the DocumentSnapshot for the oldest loaded message
+      final olderMsgs = await _loadOlderThan(oldestId);
+      if (olderMsgs.isEmpty) {
+        emit(ChatLoaded(current.messages, hasMore: false));
+        return;
+      }
+      _olderMessages.insertAll(0, olderMsgs);
+      final combined = [..._olderMessages, ...current.messages];
+      emit(ChatLoaded(combined,
+          hasMore: olderMsgs.length >= 30)); // assume more if full page
+    } catch (_) {
+      emit(ChatLoaded(current.messages, hasMore: current.hasMore));
+    }
+  }
+
+  Future<List<Message>> _loadOlderThan(String messageId) async {
+    // Get a DocumentSnapshot of the oldest visible message, then paginate before it
+    final db = ChatService();
+    // We fetch the reference doc by querying messages with this ID
+    // Using orderBy timestamp descending + startAfter approach via ChatService
+    // For simplicity, we query the raw Firestore doc via ChatService helper
+    return db.getOlderMessagesById(chatRoomId, messageId, limit: 30);
   }
 
   Future<void> _onNewMessages(
       _NewMessageReceived event, Emitter<ChatState> emit) async {
     await LocalCacheService.cacheMessages(chatRoomId, event.messages);
-    emit(ChatLoaded(event.messages));
+    // Merge with older prepended messages
+    final combined = _olderMessages.isEmpty
+        ? event.messages
+        : [..._olderMessages, ...event.messages];
+    emit(ChatLoaded(combined, hasMore: _olderMessages.isNotEmpty));
+
+    // Mark new incoming messages as seen
+    final user = AuthService().currentUser;
+    if (user != null) {
+      final hasUnseen = event.messages.any((m) =>
+          m.senderId != user.uid &&
+          (m.status == MessageStatus.sent ||
+              m.status == MessageStatus.delivered));
+      if (hasUnseen) {
+        ChatService().markMessagesAsSeen(chatRoomId, user.uid);
+      }
+    }
   }
 
   Future<void> _onSendMessage(
@@ -164,16 +240,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     // Notify via WebSocket (typing stopped)
     WebSocketService().sendTypingStop(chatRoomId);
-    // Clear typing in Firestore so other device sees it stop
-    if (user != null) {
-      ChatService().setTyping(chatRoomId, user.uid, false);
-    }
+    ChatService().setTyping(chatRoomId, user.uid, false);
   }
 
   void _onTypingStarted(TypingStarted event, Emitter<ChatState> emit) {
-    // Send typing event via WebSocket (local demo)
+    // Send typing event via WebSocket (real server)
     WebSocketService().sendTypingStart(event.chatRoomId);
-    // Write to Firestore so other device can see it
+    // Also write to Firestore so other device can see it
     final user = AuthService().currentUser;
     if (user != null) {
       ChatService().setTyping(event.chatRoomId, user.uid, true);

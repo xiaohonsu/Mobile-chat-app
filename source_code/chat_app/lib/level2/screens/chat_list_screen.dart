@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../level1/services/auth_service.dart';
 import '../../level1/services/chat_service.dart';
 import '../../level1/screens/login_screen.dart';
+import '../../level1/screens/new_chat_screen.dart';
 import '../services/notification_service.dart';
 import '../services/websocket_service.dart';
 import 'chat_screen.dart';
@@ -135,6 +136,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
             },
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppTheme.level2Color,
+        child: const Icon(Icons.chat, color: Colors.white),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => NewChatScreen(currentUser: currentUser),
+          ),
+        ),
       ),
       body: Column(
         children: [
