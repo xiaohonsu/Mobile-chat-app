@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "960488613843",
+    "project_id": "chat-app-a4569",
+    "storage_bucket": "chat-app-a4569.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:960488613843:android:724792b74cd6489ead3126",
+        "android_client_info": {
+          "package_name": "com.seminar.chat_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASh483TJVXtS0na_-h3O42Au2wikYto9k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
