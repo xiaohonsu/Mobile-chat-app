@@ -35,10 +35,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUser = AuthService().currentUser;
-    if (currentUser == null) return const LoginScreen();
+    if (currentUser == null) return const LoginScreen(level: 2);
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -83,7 +84,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               await AuthService().signOut();
               if (!context.mounted) return;
               Navigator.pushReplacement(context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()));
+                  MaterialPageRoute(builder: (_) => const LoginScreen(level: 2)));
             },
           ),
         ],
@@ -144,8 +145,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 if (_query.isNotEmpty) {
                   rooms = rooms.where((room) {
                     final name = room.displayName(currentUser.uid).toLowerCase();
-                    final lastMsg = room.lastMessage?.content.toLowerCase() ?? '';
-                    return name.contains(_query) || lastMsg.contains(_query);
+                    return name.contains(_query);
                   }).toList();
                 }
 

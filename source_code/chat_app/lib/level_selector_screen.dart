@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
 import 'level1/screens/login_screen.dart';
-import 'level2/screens/chat_list_screen.dart' as l2;
-import 'level3/screens/chat_list_screen.dart' as l3;
 
 class LevelSelectorScreen extends StatelessWidget {
   const LevelSelectorScreen({super.key});
@@ -49,7 +47,7 @@ class LevelSelectorScreen extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const LoginScreen(),
+                    builder: (_) => const LoginScreen(level: 1),
                   ),
                 ),
               ),
@@ -68,7 +66,7 @@ class LevelSelectorScreen extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const l2.ChatListScreen(),
+                    builder: (_) => const LoginScreen(level: 2),
                   ),
                 ),
               ),
@@ -87,7 +85,7 @@ class LevelSelectorScreen extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const l3.Level3ChatListScreen(),
+                    builder: (_) => const LoginScreen(level: 3),
                   ),
                 ),
               ),

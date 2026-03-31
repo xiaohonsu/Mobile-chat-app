@@ -4,18 +4,34 @@
 
 ---
 
+## Lệnh khởi động (chạy trong terminal tại thư mục `source_code/chat_app`)
+
+### Bước 1 — Mở Android Emulator
+```bash
+flutter emulators --launch Pixel_7_API35
+```
+> Chờ emulator boot xong (~30 giây) rồi mới chạy bước 2
+
+### Bước 2 — Chạy app trên Emulator (thiết bị 1)
+> Mở terminal mới, cd vào `source_code/chat_app` rồi chạy:
+```bash
+flutter run -d emulator-5554
+```
+
+### Bước 3 — Chạy app trên Chrome (thiết bị 2)
+> Mở terminal mới, cd vào `source_code/chat_app` rồi chạy:
+```bash
+flutter run -d chrome --web-port 9191
+```
+> Nếu báo port bị chiếm, đổi thành `--web-port 9292` hoặc bất kỳ số nào khác
+
+---
+
 ## Chuẩn bị trước khi demo
 
 1. Đảm bảo có internet (dùng Firebase Cloud thật)
-2. Chạy app trên Android Emulator (thiết bị 1):
-   ```
-   flutter run -d emulator-5554
-   ```
-3. Chạy app trên Chrome (thiết bị 2):
-   ```
-   flutter run -d chrome --web-port 8082
-   ```
-4. **Đăng ký 2 tài khoản** trên 2 thiết bị trước khi demo
+2. Chạy đủ cả 2 thiết bị theo lệnh ở trên
+3. **Đăng ký 2 tài khoản** trên 2 thiết bị trước khi demo (chỉ cần làm 1 lần)
 
 ---
 
@@ -191,7 +207,7 @@ void sendMessage(String text) {
 
 | Tình huống | Xử lý |
 |---|---|
-| Chrome port bị chiếm | Đổi sang `--web-port 8083` |
+| Chrome port bị chiếm | Đổi sang `--web-port 9292` hoặc số bất kỳ |
 | App crash khi khởi động | Kiểm tra internet, Firebase Console còn hoạt động |
 | Đăng nhập bị lỗi | Kiểm tra Email/Password đúng, tài khoản đã tạo chưa |
 | Chat list trống | Nhấn **+** để tạo chat room mới với user kia |

@@ -171,6 +171,27 @@ class ChatService {
         .update({'status': status.name});
   }
 
+  /// Stream typing status của các user khác trong chat room.
+  /// Dùng để show "X is typing..." indicator ở Level 2.
+  Stream<bool> watchOtherTyping(String chatRoomId, String currentUserId) {
+    return _db.collection('chats').doc(chatRoomId).snapshots().map((doc) {
+      final typing = doc.data()?['typing'] as Map? ?? {};
+      return typing.entries
+          .where((e) => e.key != currentUserId)
+          .any((e) => e.value == true);
+    });
+  }
+
+  /// Cập nhật trạng thái typing của user vào Firestore.
+  /// Cho phép thiết bị khác nhận typing indicator qua .snapshots().
+  Future<void> setTyping(
+      String chatRoomId, String uid, bool isTyping) async {
+    await _db.collection('chats').doc(chatRoomId).set(
+      {'typing': {uid: isTyping}},
+      SetOptions(merge: true),
+    );
+  }
+
   /// Cập nhật online presence trong Firestore
   /// Được dùng thay WebSocket presence ở Level 1
   Stream<bool> watchUserOnline(String uid) {
@@ -198,6 +219,106 @@ class ChatService {
       reactions.remove(uid); // toggle off
     } else {
       reactions[uid] = emoji; // add or change
+    }
+    await ref.update({'reactions': reactions});
+  }
+
+  // ─── Encrypted Chat Rooms (Level 3) ────────────────────────────
+
+  static const _encPrefix = 'encrypted_chats';
+
+  Stream<List<ChatRoom>> getEncryptedChatRooms(String uid) {
+    return _db
+        .collection(_encPrefix)
+        .where('memberIds', arrayContains: uid)
+        .snapshots()
+        .map((snap) {
+          final rooms = snap.docs.map(_roomFromDoc).toList();
+          rooms.sort((a, b) {
+            final ta = a.lastMessage?.timestamp ?? DateTime(2000);
+            final tb = b.lastMessage?.timestamp ?? DateTime(2000);
+            return tb.compareTo(ta);
+          });
+          return rooms;
+        });
+  }
+
+  Future<String> getOrCreateEncryptedChatRoom({
+    required String uid1,
+    required String name1,
+    required String uid2,
+    required String name2,
+  }) async {
+    final ids = [uid1, uid2]..sort();
+    final chatId = '${ids[0]}_${ids[1]}';
+    final ref = _db.collection(_encPrefix).doc(chatId);
+    final doc = await ref.get();
+    if (!doc.exists) {
+      await ref.set({
+        'memberIds': [uid1, uid2],
+        'memberNames': [name1, name2],
+        'isGroup': false,
+        'lastMessage': null,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+    return chatId;
+  }
+
+  Stream<List<Message>> getEncryptedMessages(String chatRoomId) {
+    return _db
+        .collection('$_encPrefix/$chatRoomId/messages')
+        .orderBy('timestamp', descending: false)
+        .snapshots()
+        .map((snap) => snap.docs.map(_msgFromDoc).toList());
+  }
+
+  Future<void> sendEncryptedMessage({
+    required String chatRoomId,
+    required String encryptedContent,
+    required String senderId,
+    required String senderName,
+  }) async {
+    final batch = _db.batch();
+
+    final messageRef =
+        _db.collection('$_encPrefix/$chatRoomId/messages').doc();
+    batch.set(messageRef, {
+      'senderId': senderId,
+      'senderName': senderName,
+      'content': encryptedContent,
+      'type': MessageType.text.name,
+      'timestamp': FieldValue.serverTimestamp(),
+      'status': MessageStatus.sent.name,
+    });
+
+    final chatRef = _db.collection(_encPrefix).doc(chatRoomId);
+    batch.update(chatRef, {
+      'lastMessage': encryptedContent,
+      'lastSenderId': senderId,
+      'lastSenderName': senderName,
+      'lastMessageTime': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
+
+  Future<void> toggleEncryptedReaction({
+    required String chatRoomId,
+    required String messageId,
+    required String uid,
+    required String emoji,
+  }) async {
+    final ref =
+        _db.collection('$_encPrefix/$chatRoomId/messages').doc(messageId);
+    final doc = await ref.get();
+    final reactions = Map<String, String>.from(
+        (doc.data() as Map<String, dynamic>?)?['reactions'] as Map? ?? {});
+    if (reactions[uid] == emoji) {
+      reactions.remove(uid);
+    } else {
+      reactions[uid] = emoji;
     }
     await ref.update({'reactions': reactions});
   }

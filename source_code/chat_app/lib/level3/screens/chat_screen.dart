@@ -39,9 +39,12 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
   }
 
   Future<void> _sendMessage(String text) async {
-    await ChatService().sendMessage(
+    // Encrypt before storing — Level 3 stores ciphertext in Firestore
+    final pubKey = _encryption.getPublicKey(widget.currentUser.uid);
+    final encrypted = _encryption.encrypt(text, pubKey);
+    await ChatService().sendEncryptedMessage(
       chatRoomId: widget.chatRoom.id,
-      content: text,
+      encryptedContent: encrypted,
       senderId: widget.currentUser.uid,
       senderName: widget.currentUser.displayName,
     );
@@ -82,7 +85,7 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
                 return GestureDetector(
                   onTap: () async {
                     Navigator.pop(context);
-                    await ChatService().toggleReaction(
+                    await ChatService().toggleEncryptedReaction(
                       chatRoomId: widget.chatRoom.id,
                       messageId: messageId,
                       uid: widget.currentUser.uid,
@@ -110,7 +113,7 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
               TextButton.icon(
                 onPressed: () async {
                   Navigator.pop(context);
-                  await ChatService().toggleReaction(
+                  await ChatService().toggleEncryptedReaction(
                     chatRoomId: widget.chatRoom.id,
                     messageId: messageId,
                     uid: widget.currentUser.uid,
@@ -201,7 +204,7 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
                       border: Border.all(color: AppTheme.level3Color),
                     ),
                     child: Text(
-                      _showEncryptedView ? 'Raw' : 'Decrypt',
+                      _showEncryptedView ? 'Decrypted' : 'Raw (DB)',
                       style: TextStyle(
                         fontSize: 11,
                         color: _showEncryptedView
@@ -270,7 +273,7 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
           // ─── Real-time messages from Firestore ──────────────────
           Expanded(
             child: StreamBuilder<List<Message>>(
-              stream: ChatService().getMessages(widget.chatRoom.id),
+              stream: ChatService().getEncryptedMessages(widget.chatRoom.id),
               builder: (context, snapshot) {
                 final messages = snapshot.data ?? [];
 
@@ -297,12 +300,15 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
                     final msg = messages[index];
                     final isMe = msg.senderId == widget.currentUser.uid;
 
-                    // E2EE simulation: if Raw mode, show fake encrypted content
-                    String displayContent = msg.content;
+                    // E2EE: msg.content is encrypted in Firestore.
+                    // Default: decrypt to show plaintext.
+                    // Raw mode: show the actual ciphertext stored in DB.
+                    String displayContent;
                     if (_showEncryptedView) {
-                      final fakeEncrypted =
-                          _encryption.encrypt(msg.content, 'demo_pub_key');
-                      displayContent = fakeEncrypted;
+                      displayContent = msg.content; // raw ciphertext from Firestore
+                    } else {
+                      final privKey = _encryption.getKeyPair(widget.currentUser.uid)?.privateKey ?? '';
+                      displayContent = _encryption.decrypt(msg.content, privKey);
                     }
 
                     return GestureDetector(
@@ -314,7 +320,7 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
                         isMe: isMe,
                         showEncryptedBadge: _showEncryptedView,
                         onReactionTap: (emoji) async {
-                          await ChatService().toggleReaction(
+                          await ChatService().toggleEncryptedReaction(
                             chatRoomId: widget.chatRoom.id,
                             messageId: msg.id,
                             uid: widget.currentUser.uid,
@@ -326,29 +332,6 @@ class _AdvancedChatScreenState extends State<AdvancedChatScreen> {
                   },
                 );
               },
-            ),
-          ),
-
-          // Security badges
-          Container(
-            color: Colors.grey[50],
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _SecurityBadge(
-                    icon: Icons.lock, label: 'E2EE', color: Colors.green),
-                _SecurityBadge(
-                    icon: Icons.emoji_emotions,
-                    label: 'Reactions',
-                    color: Colors.orange),
-                _SecurityBadge(
-                    icon: Icons.shield, label: 'Rules', color: Colors.blue),
-                _SecurityBadge(
-                    icon: Icons.storage,
-                    label: 'Secure Storage',
-                    color: AppTheme.level3Color),
-              ],
             ),
           ),
 

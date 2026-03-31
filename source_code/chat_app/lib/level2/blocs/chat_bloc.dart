@@ -164,16 +164,28 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     // Notify via WebSocket (typing stopped)
     WebSocketService().sendTypingStop(chatRoomId);
+    // Clear typing in Firestore so other device sees it stop
+    if (user != null) {
+      ChatService().setTyping(chatRoomId, user.uid, false);
+    }
   }
 
   void _onTypingStarted(TypingStarted event, Emitter<ChatState> emit) {
-    // Send typing event via WebSocket
-    // In production: WebSocketChannel.sink.add(jsonEncode({type: 'typing_start'}))
+    // Send typing event via WebSocket (local demo)
     WebSocketService().sendTypingStart(event.chatRoomId);
+    // Write to Firestore so other device can see it
+    final user = AuthService().currentUser;
+    if (user != null) {
+      ChatService().setTyping(event.chatRoomId, user.uid, true);
+    }
   }
 
   void _onTypingStopped(TypingStopped event, Emitter<ChatState> emit) {
     WebSocketService().sendTypingStop(event.chatRoomId);
+    final user = AuthService().currentUser;
+    if (user != null) {
+      ChatService().setTyping(event.chatRoomId, user.uid, false);
+    }
   }
 
   @override

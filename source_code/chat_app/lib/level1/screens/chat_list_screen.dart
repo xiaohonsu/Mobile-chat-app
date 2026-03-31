@@ -18,6 +18,7 @@ class ChatListScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -34,7 +35,7 @@ class ChatListScreen extends StatelessWidget {
               await AuthService().signOut();
               if (!context.mounted) return;
               Navigator.pushReplacement(context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()));
+                  MaterialPageRoute(builder: (_) => const LoginScreen(level: 1)));
             },
           ),
         ],

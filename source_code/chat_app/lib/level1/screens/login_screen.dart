@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../level2/screens/chat_list_screen.dart' as l2;
+import '../../level3/screens/chat_list_screen.dart' as l3;
 import '../services/auth_service.dart';
 import 'chat_list_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final int level;
+  const LoginScreen({super.key, this.level = 1});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -36,12 +39,23 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const ChatListScreen()),
+        MaterialPageRoute(builder: (_) => _chatScreenForLevel()),
       );
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Widget _chatScreenForLevel() {
+    switch (widget.level) {
+      case 2:
+        return const l2.ChatListScreen();
+      case 3:
+        return const l3.Level3ChatListScreen();
+      default:
+        return const ChatListScreen();
     }
   }
 
@@ -157,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => const RegisterScreen()),
+                          builder: (_) => RegisterScreen(level: widget.level)),
                     ),
                     child: const Text("Don't have an account? Register"),
                   ),

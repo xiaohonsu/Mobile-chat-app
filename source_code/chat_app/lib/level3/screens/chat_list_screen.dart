@@ -14,10 +14,11 @@ class Level3ChatListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentUser = AuthService().currentUser;
-    if (currentUser == null) return const LoginScreen();
+    if (currentUser == null) return const LoginScreen(level: 3);
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -34,7 +35,7 @@ class Level3ChatListScreen extends StatelessWidget {
               await AuthService().signOut();
               if (!context.mounted) return;
               Navigator.pushReplacement(context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()));
+                  MaterialPageRoute(builder: (_) => const LoginScreen(level: 3)));
             },
           ),
         ],
@@ -45,7 +46,7 @@ class Level3ChatListScreen extends StatelessWidget {
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => NewChatScreen(currentUser: currentUser),
+            builder: (_) => NewChatScreen(currentUser: currentUser, useEncrypted: true),
           ),
         ),
       ),
@@ -70,7 +71,7 @@ class Level3ChatListScreen extends StatelessWidget {
           ),
           Expanded(
             child: StreamBuilder<List<ChatRoom>>(
-              stream: ChatService().getChatRooms(currentUser.uid),
+              stream: ChatService().getEncryptedChatRooms(currentUser.uid),
               builder: (context, snapshot) {
                 final rooms = snapshot.data ?? [];
                 if (rooms.isEmpty &&

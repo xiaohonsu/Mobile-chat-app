@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../level2/screens/chat_list_screen.dart' as l2;
+import '../../level3/screens/chat_list_screen.dart' as l3;
 import '../services/auth_service.dart';
 import 'chat_list_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  final int level;
+  const RegisterScreen({super.key, this.level = 1});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -39,9 +42,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _nameCtrl.text,
       );
       if (!mounted) return;
+      Widget target;
+      switch (widget.level) {
+        case 2:
+          target = const l2.ChatListScreen();
+          break;
+        case 3:
+          target = const l3.Level3ChatListScreen();
+          break;
+        default:
+          target = const ChatListScreen();
+      }
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const ChatListScreen()),
+        MaterialPageRoute(builder: (_) => target),
       );
     } catch (e) {
       setState(() {

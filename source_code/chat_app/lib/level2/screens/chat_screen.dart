@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/models/chat_room.dart';
@@ -27,49 +26,20 @@ class Level2ChatScreen extends StatefulWidget {
 class _Level2ChatScreenState extends State<Level2ChatScreen> {
   late final ChatBloc _bloc;
   final _scrollController = ScrollController();
-  bool _otherIsTyping = false;
-  StreamSubscription? _typingSub;
 
   @override
   void initState() {
     super.initState();
     _bloc = ChatBloc(widget.chatRoom.id)
       ..add(LoadMessages(widget.chatRoom.id));
-
-    // Listen to typing events from WebSocket
-    _typingSub = WebSocketService().typingStream.listen((typingMap) {
-      final otherTyping = typingMap.entries
-          .where((e) => e.key != widget.currentUser.uid)
-          .any((e) => e.value);
-      if (mounted && otherTyping != _otherIsTyping) {
-        setState(() => _otherIsTyping = otherTyping);
-        // Auto-clear typing indicator after 3s
-        if (otherTyping) {
-          Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) setState(() => _otherIsTyping = false);
-          });
-        }
-      }
-    });
-
-    // Simulate the other user typing after 2s for demo
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        WebSocketService().simulateTyping(
-          widget.chatRoom.memberIds
-              .firstWhere((id) => id != widget.currentUser.uid),
-          widget.chatRoom.id,
-          true,
-        );
-      }
-    });
   }
 
   @override
   void dispose() {
     _bloc.close();
-    _typingSub?.cancel();
     _scrollController.dispose();
+    // Clear typing status when leaving chat
+    ChatService().setTyping(widget.chatRoom.id, widget.currentUser.uid, false);
     super.dispose();
   }
 
@@ -113,42 +83,52 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
                     final otherUid = widget.chatRoom.memberIds
                         .firstWhere((id) => id != widget.currentUser.uid,
                             orElse: () => '');
-                    if (_otherIsTyping) {
-                      return Text(
-                        'typing...',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.primaryLight,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      );
-                    }
                     return StreamBuilder<bool>(
-                      stream: otherUid.isNotEmpty
-                          ? ChatService().watchUserOnline(otherUid)
-                          : const Stream.empty(),
-                      builder: (context, snap) {
-                        final online = snap.data ?? false;
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                color: online ? Colors.greenAccent : Colors.grey[400],
-                                shape: BoxShape.circle,
-                              ),
+                      stream: ChatService().watchOtherTyping(
+                          widget.chatRoom.id, widget.currentUser.uid),
+                      builder: (context, typingSnap) {
+                        if (typingSnap.data == true) {
+                          return Text(
+                            'typing...',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.primaryLight,
+                              fontStyle: FontStyle.italic,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              online ? 'online' : 'offline',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: online ? Colors.white70 : Colors.grey[400],
-                              ),
-                            ),
-                          ],
+                          );
+                        }
+                        return StreamBuilder<bool>(
+                          stream: otherUid.isNotEmpty
+                              ? ChatService().watchUserOnline(otherUid)
+                              : const Stream.empty(),
+                          builder: (context, snap) {
+                            final online = snap.data ?? false;
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: online
+                                        ? Colors.greenAccent
+                                        : Colors.grey[400],
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  online ? 'online' : 'offline',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: online
+                                        ? Colors.white70
+                                        : Colors.grey[400],
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         );
                       },
                     );
@@ -204,29 +184,34 @@ class _Level2ChatScreenState extends State<Level2ChatScreen> {
               ),
             ),
 
-            // Typing indicator
-            if (_otherIsTyping)
-              Container(
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.only(left: 16, bottom: 4),
-                child: Row(
-                  children: [
-                    const _TypingDots(),
-                    const SizedBox(width: 8),
-                    Text(
-                      widget.chatRoom
-                          .displayName(widget.currentUser.uid)
-                          .split(' ')
-                          .first,
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    Text(' is typing...',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey[600])),
-                  ],
-                ),
-              ),
+            // Typing indicator — real-time via Firestore
+            StreamBuilder<bool>(
+              stream: ChatService().watchOtherTyping(
+                  widget.chatRoom.id, widget.currentUser.uid),
+              builder: (context, snap) {
+                if (snap.data != true) return const SizedBox.shrink();
+                return Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.only(left: 16, bottom: 4),
+                  child: Row(
+                    children: [
+                      const _TypingDots(),
+                      const SizedBox(width: 8),
+                      Text(
+                        widget.chatRoom
+                            .displayName(widget.currentUser.uid)
+                            .split(' ')
+                            .first,
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      Text(' is typing...',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600])),
+                    ],
+                  ),
+                );
+              },
+            ),
 
             // Input — dispatches BLoC events instead of calling service directly
             MessageInput(

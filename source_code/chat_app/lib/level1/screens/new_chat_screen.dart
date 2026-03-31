@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import '../../core/models/chat_room.dart';
 import '../../core/models/user_model.dart';
 import '../../core/theme/app_theme.dart';
+import '../../level3/screens/chat_screen.dart' as l3;
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import 'chat_screen.dart';
-import '../../core/models/chat_room.dart';
 
 /// Màn hình tạo chat mới — chọn user để bắt đầu cuộc trò chuyện
 class NewChatScreen extends StatefulWidget {
   final UserModel currentUser;
-  const NewChatScreen({super.key, required this.currentUser});
+  /// Nếu true → tạo chat room trong collection encrypted_chats (Level 3)
+  final bool useEncrypted;
+  const NewChatScreen({super.key, required this.currentUser, this.useEncrypted = false});
 
   @override
   State<NewChatScreen> createState() => _NewChatScreenState();
@@ -36,31 +39,43 @@ class _NewChatScreenState extends State<NewChatScreen> {
   }
 
   Future<void> _startChat(Map<String, dynamic> user) async {
-    final chatId = await ChatService().getOrCreateChatRoom(
-      uid1: widget.currentUser.uid,
-      name1: widget.currentUser.displayName,
-      uid2: user['uid'] as String,
-      name2: user['displayName'] as String,
-    );
+    final uid2 = user['uid'] as String;
+    final name2 = user['displayName'] as String;
+
+    final chatId = widget.useEncrypted
+        ? await ChatService().getOrCreateEncryptedChatRoom(
+            uid1: widget.currentUser.uid,
+            name1: widget.currentUser.displayName,
+            uid2: uid2,
+            name2: name2,
+          )
+        : await ChatService().getOrCreateChatRoom(
+            uid1: widget.currentUser.uid,
+            name1: widget.currentUser.displayName,
+            uid2: uid2,
+            name2: name2,
+          );
 
     if (!mounted) return;
 
     final room = ChatRoom(
       id: chatId,
-      memberIds: [widget.currentUser.uid, user['uid'] as String],
-      memberNames: [
-        widget.currentUser.displayName,
-        user['displayName'] as String,
-      ],
+      memberIds: [widget.currentUser.uid, uid2],
+      memberNames: [widget.currentUser.displayName, name2],
     );
 
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          chatRoom: room,
-          currentUser: widget.currentUser,
-        ),
+        builder: (_) => widget.useEncrypted
+            ? l3.AdvancedChatScreen(
+                chatRoom: room,
+                currentUser: widget.currentUser,
+              )
+            : ChatScreen(
+                chatRoom: room,
+                currentUser: widget.currentUser,
+              ),
       ),
     );
   }
