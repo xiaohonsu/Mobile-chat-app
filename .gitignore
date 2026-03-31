@@ -1,0 +1,20 @@
+# Flutter
+source_code/chat_app/.dart_tool/
+source_code/chat_app/build/
+source_code/chat_app/.flutter-plugins
+source_code/chat_app/.flutter-plugins-dependencies
+source_code/chat_app/.packages
+
+# Android
+source_code/chat_app/android/.gradle/
+source_code/chat_app/android/local.properties
+source_code/chat_app/android/key.properties
+
+# Hive cache
+source_code/chat_app/*.hive
+source_code/chat_app/*.lock
+
+# Firebase debug logs
+source_code/chat_app/firebase-debug.log
+source_code/chat_app/firestore-debug.log
+source_code/chat_app/.firebase/
